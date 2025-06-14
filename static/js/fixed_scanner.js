@@ -18,8 +18,13 @@ VANTA.NET({
 let scanInProgress = false;
 let currentScanId = null;
 let scanInterval = null;
+let logsInterval = null;
 let allVulnerabilities = [];
 let filteredVulnerabilities = [];
+let allLogs = [];
+let filteredLogs = [];
+let logsVisible = false;
+let lastLogCount = 0;
 
 // Counter animation variables
 let counters = {
@@ -52,6 +57,126 @@ function showToast(message, type = 'success', duration = 3000) {
     }).showToast();
 }
 
+// Logs functionality
+function toggleLogs() {
+    const logsContainer = document.getElementById('logs-container');
+    const toggleBtn = document.getElementById('logs-toggle');
+    
+    if (logsVisible) {
+        logsContainer.style.display = 'none';
+        toggleBtn.innerHTML = '<i class="fas fa-eye"></i> Show Logs';
+        logsVisible = false;
+    } else {
+        logsContainer.style.display = 'block';
+        toggleBtn.innerHTML = '<i class="fas fa-eye-slash"></i> Hide Logs';
+        logsVisible = true;
+        displayLogs();
+    }
+}
+
+function clearLogs() {
+    allLogs = [];
+    filteredLogs = [];
+    lastLogCount = 0;
+    const logsContent = document.getElementById('logs-content');
+    if (logsContent) {
+        logsContent.innerHTML = '<div class="log-entry info">Logs cleared</div>';
+    }
+    document.getElementById('logs-count').textContent = '0';
+    showToast('Logs cleared', 'success', 2000);
+}
+
+function filterLogs() {
+    const filterValue = document.getElementById('logs-filter').value;
+    
+    if (filterValue === '') {
+        filteredLogs = [...allLogs];
+    } else {
+        filteredLogs = allLogs.filter(log => log.type === filterValue);
+    }
+    
+    displayLogs();
+}
+
+function displayLogs() {
+    const logsContent = document.getElementById('logs-content');
+    const logsCount = document.getElementById('logs-count');
+    
+    if (!logsContent || !logsCount) return;
+    
+    logsCount.textContent = filteredLogs.length;
+    
+    if (filteredLogs.length === 0) {
+        logsContent.innerHTML = '<div class="log-entry info">No logs to display</div>';
+        return;
+    }
+    
+    // Show only last 50 logs for performance
+    const recentLogs = filteredLogs.slice(-50);
+    
+    logsContent.innerHTML = recentLogs.map(log => {
+        const timestamp = log.timestamp || new Date().toLocaleTimeString();
+        const message = escapeHtml(log.message || '');
+        const parameter = log.parameter ? escapeHtml(log.parameter) : '';
+        const payload = log.payload ? escapeHtml(log.payload) : '';
+        const result = log.result ? escapeHtml(log.result) : '';
+        
+        return `
+            <div class="log-entry ${log.type || 'info'}">
+                <span class="log-timestamp">[${timestamp}]</span>
+                <span class="log-message">${message}</span>
+                ${parameter ? `<div class="log-details">Parameter: <span class="log-parameter">${parameter}</span></div>` : ''}
+                ${payload ? `<div class="log-details">Payload: <span class="log-payload">${payload}</span></div>` : ''}
+                ${result ? `<div class="log-details">Result: ${result}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+    
+    // Auto-scroll to bottom
+    logsContent.scrollTop = logsContent.scrollHeight;
+}
+
+async function fetchLogs() {
+    if (!currentScanId) return;
+    
+    try {
+        const response = await fetch(`/scan_logs/${currentScanId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.logs && data.logs.length > lastLogCount) {
+            allLogs = data.logs;
+            lastLogCount = data.logs.length;
+            
+            // Apply current filter
+            filterLogs();
+            
+            if (logsVisible) {
+                displayLogs();
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching logs:', error);
+    }
+}
+
+function startLogsMonitoring() {
+    if (logsInterval) {
+        clearInterval(logsInterval);
+    }
+    logsInterval = setInterval(fetchLogs, 500); // Fetch logs every 500ms
+}
+
+function stopLogsMonitoring() {
+    if (logsInterval) {
+        clearInterval(logsInterval);
+        logsInterval = null;
+    }
+}
+
 async function startScan() {
     if (scanInProgress) return;
     
@@ -67,11 +192,12 @@ async function startScan() {
         return;
     }
     
-    // Reset all counters to 0
+    // Reset all counters and data
     resetCounters();
     
     scanInProgress = true;
     currentScanId = Date.now().toString();
+    lastLogCount = 0;
     
     // Update UI
     document.getElementById('start-scan-btn').style.display = 'none';
@@ -92,6 +218,10 @@ async function startScan() {
             })
         });
         
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
         const data = await response.json();
         
         if (data.error) {
@@ -100,8 +230,14 @@ async function startScan() {
             return;
         }
         
-        // Start monitoring scan progress
+        // Start monitoring scan progress and logs
         startScanMonitoring();
+        startLogsMonitoring();
+        
+        // Show logs by default during scan
+        if (!logsVisible) {
+            toggleLogs();
+        }
         
     } catch (error) {
         console.error('Scan error:', error);
@@ -112,24 +248,37 @@ async function startScan() {
 
 function resetCounters() {
     // Reset all counters to 0
-    document.getElementById('total-vulns').textContent = '0';
-    document.getElementById('reflected-count').textContent = '0';
-    document.getElementById('high-confidence-count').textContent = '0';
-    document.getElementById('medium-confidence-count').textContent = '0';
-    document.getElementById('tests-completed').textContent = '0';
-    document.getElementById('total-tests').textContent = '0';
-    document.getElementById('total-payloads').textContent = '0';
-    document.getElementById('parameters-found').textContent = '0';
-    document.getElementById('vulns-found').textContent = '0';
+    const elements = [
+        'total-vulns', 'reflected-count', 'high-confidence-count', 'medium-confidence-count',
+        'tests-completed', 'total-tests', 'total-payloads', 'parameters-found', 'vulns-found'
+    ];
+    
+    elements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = '0';
+    });
     
     // Reset progress bar
-    document.getElementById('progress-fill').style.width = '0%';
-    document.getElementById('progress-percentage').textContent = '0%';
+    const progressFill = document.getElementById('progress-fill');
+    const progressPercentage = document.getElementById('progress-percentage');
+    if (progressFill) progressFill.style.width = '0%';
+    if (progressPercentage) progressPercentage.textContent = '0%';
     
-    // Clear vulnerabilities
+    // Clear data arrays
     allVulnerabilities = [];
     filteredVulnerabilities = [];
-    document.getElementById('vulnerabilities-list').innerHTML = '';
+    allLogs = [];
+    filteredLogs = [];
+    lastLogCount = 0;
+    
+    // Clear UI containers
+    const vulnerabilitiesList = document.getElementById('vulnerabilities-list');
+    const logsContent = document.getElementById('logs-content');
+    const logsCount = document.getElementById('logs-count');
+    
+    if (vulnerabilitiesList) vulnerabilitiesList.innerHTML = '';
+    if (logsContent) logsContent.innerHTML = '';
+    if (logsCount) logsCount.textContent = '0';
     
     // Reset counters object
     counters = {
@@ -138,14 +287,26 @@ function resetCounters() {
         highConfidenceCount: 0,
         mediumConfidenceCount: 0
     };
+    
+    // Remove any completion indicators
+    const completionDivs = document.querySelectorAll('.scan-complete');
+    completionDivs.forEach(div => div.remove());
 }
 
 function startScanMonitoring() {
+    if (scanInterval) {
+        clearInterval(scanInterval);
+    }
+    
     document.getElementById('scan-status').textContent = 'Scanning in progress...';
     
     scanInterval = setInterval(async () => {
         try {
             const response = await fetch(`/scan_status/${currentScanId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
             const data = await response.json();
             
             // Update progress with real data
@@ -162,6 +323,8 @@ function startScanMonitoring() {
             // Check if scan is complete
             if (!data.is_running || data.scan_complete) {
                 stopScanMonitoring();
+                stopLogsMonitoring();
+                
                 document.getElementById('scan-status').textContent = 'Scan completed';
                 document.getElementById('progress-percentage').textContent = '100%';
                 document.getElementById('progress-fill').style.width = '100%';
@@ -175,10 +338,13 @@ function startScanMonitoring() {
                 }
                 
                 // Add completion indicator
-                const completionDiv = document.createElement('div');
-                completionDiv.className = 'scan-complete';
-                completionDiv.innerHTML = `<i class="fas fa-check-circle"></i> Scan Completed - ${vulnCount} vulnerabilities found`;
-                document.getElementById('scan-progress').appendChild(completionDiv);
+                const scanProgress = document.getElementById('scan-progress');
+                if (scanProgress && !document.querySelector('.scan-complete')) {
+                    const completionDiv = document.createElement('div');
+                    completionDiv.className = 'scan-complete';
+                    completionDiv.innerHTML = `<i class="fas fa-check-circle"></i> Scan Completed - ${vulnCount} vulnerabilities found`;
+                    scanProgress.appendChild(completionDiv);
+                }
                 
                 resetScanUI();
             }
@@ -187,6 +353,7 @@ function startScanMonitoring() {
             console.error('Error monitoring scan:', error);
             showToast('Error monitoring scan progress', 'error');
             stopScanMonitoring();
+            stopLogsMonitoring();
             resetScanUI();
         }
     }, 1000);
@@ -201,14 +368,17 @@ function stopScanMonitoring() {
 
 async function stopScan() {
     try {
-        await fetch('/stop_scan', {
+        const response = await fetch('/stop_scan', {
             method: 'POST'
         });
         
-        stopScanMonitoring();
-        document.getElementById('scan-status').textContent = 'Scan stopped by user';
-        showToast('Scan stopped by user', 'warning');
-        resetScanUI();
+        if (response.ok) {
+            stopScanMonitoring();
+            stopLogsMonitoring();
+            document.getElementById('scan-status').textContent = 'Scan stopped by user';
+            showToast('Scan stopped by user', 'warning');
+            resetScanUI();
+        }
         
     } catch (error) {
         console.error('Error stopping scan:', error);
@@ -218,22 +388,35 @@ async function stopScan() {
 
 function resetScanUI() {
     scanInProgress = false;
-    document.getElementById('start-scan-btn').style.display = 'block';
-    document.getElementById('stop-scan-btn').style.display = 'none';
+    const startBtn = document.getElementById('start-scan-btn');
+    const stopBtn = document.getElementById('stop-scan-btn');
+    
+    if (startBtn) startBtn.style.display = 'block';
+    if (stopBtn) stopBtn.style.display = 'none';
 }
 
 function updateScanProgress(data) {
     // Update progress bar with real percentage
     const progress = Math.min(data.progress || 0, 100);
-    document.getElementById('progress-fill').style.width = `${progress}%`;
-    document.getElementById('progress-percentage').textContent = `${Math.round(progress)}%`;
+    const progressFill = document.getElementById('progress-fill');
+    const progressPercentage = document.getElementById('progress-percentage');
+    
+    if (progressFill) progressFill.style.width = `${progress}%`;
+    if (progressPercentage) progressPercentage.textContent = `${Math.round(progress)}%`;
     
     // Update all counters with real data
-    document.getElementById('tests-completed').textContent = data.completed_tests || 0;
-    document.getElementById('total-tests').textContent = data.total_tests || 0;
-    document.getElementById('total-payloads').textContent = data.total_payloads || 0;
-    document.getElementById('parameters-found').textContent = data.parameters_found || 0;
-    document.getElementById('vulns-found').textContent = data.vulnerabilities_found || 0;
+    const updates = {
+        'tests-completed': data.completed_tests || 0,
+        'total-tests': data.total_tests || 0,
+        'total-payloads': data.total_payloads || 0,
+        'parameters-found': data.parameters_found || 0,
+        'vulns-found': data.vulnerabilities_found || 0
+    };
+    
+    Object.entries(updates).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+    });
 }
 
 function updateSummaryCards() {
@@ -290,6 +473,8 @@ function animateCounter(elementId, startValue, targetValue) {
 
 function displayVulnerabilities() {
     const container = document.getElementById('vulnerabilities-list');
+    if (!container) return;
+    
     container.innerHTML = '';
     
     if (filteredVulnerabilities.length === 0) {
@@ -312,13 +497,13 @@ function createVulnerabilityElement(vuln, index) {
     const div = document.createElement('div');
     div.className = 'vulnerability-item';
     
-    const typeClass = vuln.type.toLowerCase();
+    const typeClass = (vuln.type || 'unknown').toLowerCase();
     const confidenceClass = (vuln.confidence || 'medium').toLowerCase();
     
     div.innerHTML = `
         <div class="vuln-header">
             <div class="vuln-badges">
-                <span class="vuln-type ${typeClass}">${vuln.type.toUpperCase()} XSS</span>
+                <span class="vuln-type ${typeClass}">${(vuln.type || 'UNKNOWN').toUpperCase()} XSS</span>
                 <span class="vuln-confidence ${confidenceClass}">${vuln.confidence || 'Medium'} Confidence</span>
                 <span class="vuln-status">Status: ${vuln.status_code || 'N/A'}</span>
             </div>
@@ -347,8 +532,8 @@ function createVulnerabilityElement(vuln, index) {
                     <strong>Execution Details:</strong> ${escapeHtml(vuln.execution_details)}
                 </div>
             ` : ''}
-            <div class="vuln-payload" onclick="copyPayload('${escapeHtml(vuln.payload)}')">
-                <strong>Payload:</strong> ${escapeHtml(vuln.payload)}
+            <div class="vuln-payload" onclick="copyPayload('${escapeHtml(vuln.payload || '')}')">
+                <strong>Payload:</strong> ${escapeHtml(vuln.payload || 'N/A')}
                 <small style="opacity: 0.7; margin-left: 10px;">(Click to copy)</small>
             </div>
         </div>
@@ -358,10 +543,13 @@ function createVulnerabilityElement(vuln, index) {
 }
 
 function copyPayload(payload) {
+    if (!payload) return;
+    
     navigator.clipboard.writeText(payload).then(() => {
         showToast('Payload copied to clipboard!', 'success');
     }).catch(err => {
         showToast('Failed to copy payload', 'error');
+        console.error('Copy failed:', err);
     });
 }
 
@@ -373,7 +561,7 @@ function filterResults() {
     filteredVulnerabilities = allVulnerabilities.filter(vuln => {
         const matchesStatus = !statusFilter || vuln.status_code == statusFilter;
         const matchesConfidence = !confidenceFilter || vuln.confidence === confidenceFilter;
-        const matchesPayload = !payloadSearch || vuln.payload.toLowerCase().includes(payloadSearch);
+        const matchesPayload = !payloadSearch || (vuln.payload && vuln.payload.toLowerCase().includes(payloadSearch));
         
         return matchesStatus && matchesConfidence && matchesPayload;
     });
@@ -390,6 +578,10 @@ async function exportCSV() {
     
     try {
         const response = await fetch('/export_csv');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
         const blob = await response.blob();
         
         const url = window.URL.createObjectURL(blob);
@@ -412,16 +604,29 @@ async function exportCSV() {
 function clearResults() {
     allVulnerabilities = [];
     filteredVulnerabilities = [];
-    document.getElementById('results').style.display = 'none';
-    document.getElementById('status-filter').value = '';
-    document.getElementById('confidence-filter').value = '';
-    document.getElementById('payload-search').value = '';
+    allLogs = [];
+    filteredLogs = [];
+    lastLogCount = 0;
+    
+    const elements = ['results', 'status-filter', 'confidence-filter', 'payload-search', 'logs-filter'];
+    elements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            if (id === 'results') {
+                element.style.display = 'none';
+            } else {
+                element.value = '';
+            }
+        }
+    });
+    
     resetScanUI();
     resetCounters();
     showToast('Results cleared', 'success');
 }
 
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
@@ -454,9 +659,32 @@ document.addEventListener('keydown', function(e) {
             exportCSV();
         }
     }
+    
+    if (e.ctrlKey && e.key === 'l') {
+        e.preventDefault();
+        toggleLogs();
+    }
 });
 
-// Show welcome message
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     showToast('XSS Scanner ready! Enter a URL to begin scanning.', 'success', 4000);
+    
+    // Initialize logs section
+    const logsContainer = document.getElementById('logs-container');
+    if (logsContainer) {
+        logsContainer.style.display = 'none';
+        logsVisible = false;
+    }
+    
+    // Test connectivity
+    fetch('/health')
+        .then(response => response.json())
+        .then(data => {
+            console.log('Scanner backend connected:', data);
+        })
+        .catch(error => {
+            console.error('Backend connection failed:', error);
+            showToast('Warning: Backend connection issues detected', 'warning', 5000);
+        });
 });
